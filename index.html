@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nuvole e pioggia — Viareggio, raggio 100 km</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root{
+    --bg:#10161d; --panel:rgba(16,22,29,.88); --ink:#e9eef3; --muted:#8fa0b0;
+    --line:#2a3542; --accent:#5fb3ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:15px/1.4 "Avenir Next","Segoe UI",system-ui,sans-serif}
+  #map{position:fixed;inset:0}
+  .leaflet-container{background:var(--bg)}
+
+  #panel{position:fixed;left:0;right:0;bottom:0;z-index:1000;
+    padding:12px 16px calc(14px + env(safe-area-inset-bottom));
+    background:var(--panel);backdrop-filter:blur(8px);border-top:1px solid var(--line)}
+  @media(min-width:720px){#panel{left:auto;width:380px;bottom:16px;right:16px;border:1px solid var(--line);border-radius:12px}}
+
+  h1{margin:0 0 8px;font-size:15px;font-weight:600;letter-spacing:.01em}
+  h1 small{font-weight:400;color:var(--muted)}
+  .row{display:flex;align-items:center;gap:12px}
+  button{border:1px solid var(--line);background:#1a2330;color:var(--ink);width:44px;height:44px;
+    border-radius:50%;font-size:18px;cursor:pointer;flex:none}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  #time{flex:1;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
+  #time span{display:block;font-size:12px;color:var(--muted);font-variant-numeric:normal}
+  input[type=range]{width:100%;margin:10px 0 6px;accent-color:var(--accent)}
+
+  .legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:4px}
+  .legend i{display:inline-block;width:38px;height:9px;vertical-align:middle;margin-right:6px;border-radius:2px}
+  .lg-cloud{background:linear-gradient(90deg,rgba(235,238,243,.05),rgba(235,238,243,.85))}
+  .lg-rain{background:linear-gradient(90deg,#8ad0ff,#1e6fe0,#3d1fa8)}
+  #status{font-size:12px;color:var(--muted);margin-top:6px;min-height:1em}
+  #now{color:var(--accent)}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="map" aria-label="Mappa nuvole e pioggia"></div>
+
+<div id="panel">
+  <h1>Nuvole e pioggia <small>— Viareggio, 100 km</small></h1>
+  <div class="row">
+    <button id="play" aria-label="Avvia animazione">▶</button>
+    <div id="time">—<span>caricamento previsione…</span></div>
+  </div>
+  <input type="range" id="slider" min="0" max="0" value="0" aria-label="Ora">
+  <div class="legend">
+    <div><i class="lg-cloud"></i>copertura nuvolosa</div>
+    <div><i class="lg-rain"></i>pioggia mm/h</div>
+  </div>
+  <div id="status"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+function boot(){ if (window.L) return start();
+  // fallback: seconda CDN
+  const s = document.createElement('script');
+  s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  s.onload = start;
+  s.onerror = () => { document.getElementById('status').textContent = 'Leaflet non caricato: controlla la connessione.'; };
+  document.head.appendChild(s);
+}
+function start(){
+  // ---- configurazione ----
+  const C = { lat: 43.8667, lon: 10.2500 };   // Viareggio
+  const R_KM = 100;
+  const N = 9;                                 // griglia N×N (81 punti, ~25 km di passo)
+  const PAST_H = 6, FUTURE_H = 42;
+  const PX = 160;                              // risoluzione canvas overlay
+  const STEP_MS = 650;
+
+  const dLat = R_KM / 111.32;
+  const dLon = R_KM / (111.32 * Math.cos(C.lat * Math.PI / 180));
+  const bounds = [[C.lat - dLat, C.lon - dLon], [C.lat + dLat, C.lon + dLon]];
+
+  // ---- mappa ----
+  const map = L.map('map', { zoomControl: false, attributionControl: true })
+    .setView([C.lat, C.lon], 8);
+  L.control.zoom({ position: 'topright' }).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap, &copy; CARTO · dati <a href="https://open-meteo.com">Open-Meteo</a>',
+    subdomains: 'abcd', maxZoom: 12
+  }).addTo(map);
+
+  L.circle([C.lat, C.lon], { radius: R_KM * 1000, color: '#5fb3ff', weight: 1, opacity: .6, fill: false, dashArray: '4 6' }).addTo(map);
+  L.circleMarker([C.lat, C.lon], { radius: 4, color: '#fff', fillColor: '#5fb3ff', fillOpacity: 1, weight: 1.5 })
+    .addTo(map).bindTooltip('Viareggio', { permanent: true, direction: 'right', className: 'lbl' });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = PX;
+  const ctx = canvas.getContext('2d');
+  const overlay = L.imageOverlay(canvas.toDataURL(), bounds, { opacity: 1, interactive: false }).addTo(map);
+  map.fitBounds(bounds, { padding: [10, 10] });
+
+  // ---- dati ----
+  const lats = [], lons = [];
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    lats.push((C.lat - dLat + 2 * dLat * i / (N - 1)).toFixed(3));   // i: sud → nord
+    lons.push((C.lon - dLon + 2 * dLon * j / (N - 1)).toFixed(3));   // j: ovest → est
+  }
+  const url = 'https://api.open-meteo.com/v1/forecast'
+    + '?latitude=' + lats.join(',') + '&longitude=' + lons.join(',')
+    + '&hourly=cloud_cover,precipitation&past_hours=' + PAST_H + '&forecast_hours=' + FUTURE_H
+    + '&timezone=Europe%2FRome';
+
+  let times = [], cloud = [], rain = [];   // cloud[t][i*N+j]
+  const $ = id => document.getElementById(id);
+  const slider = $('slider'), status = $('status'), timeEl = $('time'), playBtn = $('play');
+
+  fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(arr => {
+      if (!Array.isArray(arr)) arr = [arr];
+      times = arr[0].hourly.time;
+      const T = times.length;
+      cloud = Array.from({ length: T }, () => new Float32Array(N * N));
+      rain  = Array.from({ length: T }, () => new Float32Array(N * N));
+      arr.forEach((loc, k) => {
+        for (let t = 0; t < T; t++) {
+          cloud[t][k] = loc.hourly.cloud_cover[t] ?? 0;
+          rain[t][k]  = loc.hourly.precipitation[t] ?? 0;
+        }
+      });
+      slider.max = T - 1;
+      slider.value = nowIndex();
+      status.textContent = 'Modello Open-Meteo, ' + N * N + ' punti · aggiornato ' + new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      render(+slider.value);
+    })
+    .catch(e => {
+      status.textContent = 'Impossibile caricare i dati (' + e.message + '). Ricarica la pagina.';
+      timeEl.innerHTML = '—<span>errore</span>';
+    });
+
+  function nowIndex() {
+    const now = Date.now();
+    let best = 0, d = Infinity;
+    times.forEach((s, i) => { const x = Math.abs(new Date(s).getTime() - now); if (x < d) { d = x; best = i; } });
+    return best;
+  }
+
+  // ---- rendering ----
+  function bilinear(arr, gx, gy) {
+    const x0 = Math.floor(gx), y0 = Math.floor(gy);
+    const x1 = Math.min(x0 + 1, N - 1), y1 = Math.min(y0 + 1, N - 1);
+    const fx = gx - x0, fy = gy - y0;
+    const a = arr[y0 * N + x0], b = arr[y0 * N + x1], c = arr[y1 * N + x0], d = arr[y1 * N + x1];
+    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+  }
+  function rainColor(mm) {
+    // 0.1 → azzurro, 2 → blu, 6+ → viola
+    const t = Math.min(1, Math.log1p(mm) / Math.log1p(6));
+    const stops = [[138, 208, 255], [30, 111, 224], [61, 31, 168]];
+    const s = t < .5 ? 0 : 1, f = t < .5 ? t * 2 : (t - .5) * 2;
+    return [0, 1, 2].map(i => stops[s][i] + (stops[s + 1][i] - stops[s][i]) * f);
+  }
+  function render(t) {
+    if (!cloud[t]) return;
+    const img = ctx.createImageData(PX, PX), d = img.data;
+    for (let py = 0; py < PX; py++) {
+      const gy = (1 - py / (PX - 1)) * (N - 1);            // riga 0 canvas = nord
+      for (let px = 0; px < PX; px++) {
+        const gx = px / (PX - 1) * (N - 1);
+        const cc = bilinear(cloud[t], gx, gy) / 100;
+        const mm = bilinear(rain[t], gx, gy);
+        // nuvole: bianco-grigio semitrasparente
+        let r = 235, g = 238, b = 243, a = Math.pow(cc, 1.4) * .8;
+        // pioggia sopra le nuvole
+        if (mm > 0.05) {
+          const [rr, rg, rb] = rainColor(mm);
+          const ra = Math.min(.92, .45 + mm / 5);
+          r = r * (1 - ra) + rr * ra; g = g * (1 - ra) + rg * ra; b = b * (1 - ra) + rb * ra;
+          a = Math.max(a, ra);
+        }
+        const o = (py * PX + px) * 4;
+        d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = a * 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    overlay.setUrl(canvas.toDataURL());
+
+    const dt = new Date(times[t]);
+    const isNow = t === nowIndex();
+    const day = dt.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+    timeEl.innerHTML = dt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+      + (isNow ? ' <span id="now" style="display:inline">adesso</span>' : '')
+      + '<span>' + day + (t < PAST_H ? ' · osservato/analisi' : ' · previsione') + '</span>';
+  }
+
+  // ---- controlli ----
+  let timer = null;
+  slider.addEventListener('input', () => { stop(); render(+slider.value); });
+  playBtn.addEventListener('click', () => timer ? stop() : play());
+  function play() {
+    playBtn.textContent = '❚❚'; playBtn.setAttribute('aria-label', 'Ferma animazione');
+    timer = setInterval(() => {
+      let v = +slider.value + 1; if (v > +slider.max) v = 0;
+      slider.value = v; render(v);
+    }, STEP_MS);
+  }
+  function stop() {
+    clearInterval(timer); timer = null;
+    playBtn.textContent = '▶'; playBtn.setAttribute('aria-label', 'Avvia animazione');
+  }
+}
+boot();
+</script>
+<style>
+  .lbl{background:transparent;border:0;box-shadow:none;color:#e9eef3;font-weight:600;font-size:12px;text-shadow:0 1px 3px #000}
+  .lbl::before{display:none}
+</style>
+</body>
+</html>
