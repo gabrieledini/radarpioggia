@@ -3,56 +3,81 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Nuvole e pioggia — Viareggio, raggio 100 km</title>
+<title>Radar nuvole e pioggia — Viareggio</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
-  :root{
-    --bg:#10161d; --panel:rgba(16,22,29,.88); --ink:#e9eef3; --muted:#8fa0b0;
-    --line:#2a3542; --accent:#5fb3ff;
-  }
+  :root{--bg:#0b1118;--glass:rgba(11,17,24,.82);--ink:#eef3f8;--muted:#8a9bad;--line:rgba(255,255,255,.09);--accent:#6ec1ff}
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
-    font:15px/1.4 "Avenir Next","Segoe UI",system-ui,sans-serif}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.4 "Avenir Next","Segoe UI",system-ui,sans-serif;overflow:hidden}
   #map{position:fixed;inset:0}
   .leaflet-container{background:var(--bg)}
+  .leaflet-control-zoom a{background:#141d27;color:var(--ink);border-color:var(--line)}
+  .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#141d27;color:var(--ink);box-shadow:0 6px 24px rgba(0,0,0,.5)}
+  .leaflet-popup-content{margin:10px 14px;font-size:13px;line-height:1.5}
+  .lbl{background:transparent;border:0;box-shadow:none;color:#fff;font-weight:600;font-size:12px;text-shadow:0 1px 4px #000,0 0 2px #000}
+  .lbl::before{display:none}
 
-  #panel{position:fixed;left:0;right:0;bottom:0;z-index:1000;
-    padding:12px 16px calc(14px + env(safe-area-inset-bottom));
-    background:var(--panel);backdrop-filter:blur(8px);border-top:1px solid var(--line)}
-  @media(min-width:720px){#panel{left:auto;width:380px;bottom:16px;right:16px;border:1px solid var(--line);border-radius:12px}}
+  #title{position:fixed;top:12px;left:12px;z-index:1000;padding:8px 12px;background:var(--glass);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.3}
+  #title b{display:block;font-size:15px;font-weight:600}
+  #title span{color:var(--muted)}
 
-  h1{margin:0 0 8px;font-size:15px;font-weight:600;letter-spacing:.01em}
-  h1 small{font-weight:400;color:var(--muted)}
-  .row{display:flex;align-items:center;gap:12px}
-  button{border:1px solid var(--line);background:#1a2330;color:var(--ink);width:44px;height:44px;
-    border-radius:50%;font-size:18px;cursor:pointer;flex:none}
-  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  #time{flex:1;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
-  #time span{display:block;font-size:12px;color:var(--muted);font-variant-numeric:normal}
-  input[type=range]{width:100%;margin:10px 0 6px;accent-color:var(--accent)}
+  #panel{position:fixed;left:0;right:0;bottom:0;z-index:1000;padding:10px 14px calc(12px + env(safe-area-inset-bottom));
+    background:var(--glass);backdrop-filter:blur(12px);border-top:1px solid var(--line)}
+  @media(min-width:760px){#panel{left:auto;right:16px;bottom:16px;width:420px;border:1px solid var(--line);border-radius:14px}}
 
-  .legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:4px}
-  .legend i{display:inline-block;width:38px;height:9px;vertical-align:middle;margin-right:6px;border-radius:2px}
-  .lg-cloud{background:linear-gradient(90deg,rgba(235,238,243,.05),rgba(235,238,243,.85))}
-  .lg-rain{background:linear-gradient(90deg,#8ad0ff,#1e6fe0,#3d1fa8)}
-  #status{font-size:12px;color:var(--muted);margin-top:6px;min-height:1em}
-  #now{color:var(--accent)}
+  .row{display:flex;align-items:center;gap:10px}
+  #time{flex:1;font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  #time small{display:block;font-size:12px;font-weight:400;color:var(--muted);margin-top:3px}
+  #time em{font-style:normal;color:var(--accent);font-size:13px;font-weight:600;margin-left:6px;vertical-align:middle}
+  button,select{border:1px solid var(--line);background:#141d27;color:var(--ink);font:inherit;cursor:pointer}
+  button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  #play{width:46px;height:46px;border-radius:50%;font-size:17px;flex:none}
+  .pill{height:32px;padding:0 10px;border-radius:16px;font-size:13px}
+  select.pill{appearance:none;-webkit-appearance:none;padding-right:22px;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 13px) 14px,calc(100% - 9px) 14px;background-size:4px 4px;background-repeat:no-repeat}
+
+  #tl{position:relative;height:56px;margin:10px 0 2px}
+  #spark{position:absolute;inset:0;width:100%;height:100%}
+  #slider{position:absolute;left:0;right:0;bottom:-6px;width:100%;margin:0;background:transparent;-webkit-appearance:none;appearance:none;height:24px}
+  #slider::-webkit-slider-runnable-track{height:2px;background:var(--line)}
+  #slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;margin-top:-7px;border-radius:50%;background:#fff;border:3px solid var(--accent);box-shadow:0 0 0 3px rgba(110,193,255,.25)}
+  #slider::-moz-range-track{height:2px;background:var(--line)}
+  #slider::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:#fff;border:3px solid var(--accent)}
+  #ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:8px;font-variant-numeric:tabular-nums}
+
+  #legend{margin-top:10px;font-size:11px;color:var(--muted)}
+  #legend .bar{height:8px;border-radius:4px;background:linear-gradient(90deg,#3caaff 0%,#50dc8c 18%,#ffe650 38%,#ff9628 58%,#eb323c 78%,#c83cdc 100%)}
+  #legend .lab{display:flex;justify-content:space-between;margin-top:3px;font-variant-numeric:tabular-nums}
+  #legend .cl{display:flex;align-items:center;gap:8px;margin-top:6px}
+  #legend .cl i{width:60px;height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(220,228,238,0),rgba(220,228,238,.7))}
+  #status{font-size:11px;color:var(--muted);margin-top:8px;min-height:1em}
   @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <div id="map" aria-label="Mappa nuvole e pioggia"></div>
+<div id="title"><b>Radar previsionale</b><span>Viareggio · nuvole e pioggia · modello Open-Meteo</span></div>
 
 <div id="panel">
-  <h1>Nuvole e pioggia <small>— Viareggio, 100 km</small></h1>
   <div class="row">
     <button id="play" aria-label="Avvia animazione">▶</button>
-    <div id="time">—<span>caricamento previsione…</span></div>
+    <div id="time">—<small>caricamento…</small></div>
+    <button id="speed" class="pill" aria-label="Velocità animazione">1×</button>
+    <select id="radius" class="pill" aria-label="Raggio">
+      <option value="100">100 km</option>
+      <option value="200" selected>200 km</option>
+      <option value="300">300 km</option>
+    </select>
   </div>
-  <input type="range" id="slider" min="0" max="0" value="0" aria-label="Ora">
-  <div class="legend">
-    <div><i class="lg-cloud"></i>copertura nuvolosa</div>
-    <div><i class="lg-rain"></i>pioggia mm/h</div>
+  <div id="tl">
+    <canvas id="spark"></canvas>
+    <input type="range" id="slider" min="0" max="0" value="0" step="1" aria-label="Ora">
+  </div>
+  <div id="ticks"></div>
+  <div id="legend">
+    <div class="bar"></div>
+    <div class="lab"><span>0,2</span><span>1</span><span>2,5</span><span>5</span><span>10</span><span>25 mm/h</span></div>
+    <div class="cl"><i></i>copertura nuvolosa · tocca la mappa per i valori puntuali</div>
   </div>
   <div id="status"></div>
 </div>
@@ -60,159 +85,180 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 function boot(){ if (window.L) return start();
-  // fallback: seconda CDN
-  const s = document.createElement('script');
-  s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-  s.onload = start;
-  s.onerror = () => { document.getElementById('status').textContent = 'Leaflet non caricato: controlla la connessione.'; };
+  const s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  s.onload=start; s.onerror=()=>{document.getElementById('status').textContent='Leaflet non caricato: controlla la connessione.';};
   document.head.appendChild(s);
 }
 function start(){
-  // ---- configurazione ----
-  const C = { lat: 43.8667, lon: 10.2500 };   // Viareggio
-  const R_KM = 100;
-  const N = 9;                                 // griglia N×N (81 punti, ~25 km di passo)
-  const PAST_H = 6, FUTURE_H = 42;
-  const PX = 160;                              // risoluzione canvas overlay
-  const STEP_MS = 650;
-
-  const dLat = R_KM / 111.32;
-  const dLon = R_KM / (111.32 * Math.cos(C.lat * Math.PI / 180));
-  const bounds = [[C.lat - dLat, C.lon - dLon], [C.lat + dLat, C.lon + dLon]];
+  const $=id=>document.getElementById(id);
+  const C={lat:43.8667,lon:10.25};
+  const N=13, PAST_H=6, FUTURE_H=48, PX=320, SUB=6;   // SUB frame per ora (10 min)
+  let R_KM=+$('radius').value, dLat, dLon, bounds, lats, lons;
+  let times=[], cloud=[], rain=[], T=0, frames=0;
+  let speed=1, timer=null, lastPopup=null;
 
   // ---- mappa ----
-  const map = L.map('map', { zoomControl: false, attributionControl: true })
-    .setView([C.lat, C.lon], 8);
-  L.control.zoom({ position: 'topright' }).addTo(map);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OpenStreetMap, &copy; CARTO · dati <a href="https://open-meteo.com">Open-Meteo</a>',
-    subdomains: 'abcd', maxZoom: 12
-  }).addTo(map);
+  const map=L.map('map',{zoomControl:false}).setView([C.lat,C.lon],7);
+  L.control.zoom({position:'topright'}).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:12,
+    attribution:'&copy; OpenStreetMap &copy; CARTO · dati <a href="https://open-meteo.com">Open-Meteo</a>'}).addTo(map);
+  map.createPane('labels'); map.getPane('labels').style.zIndex=650; map.getPane('labels').style.pointerEvents='none';
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:12,pane:'labels'}).addTo(map);
 
-  L.circle([C.lat, C.lon], { radius: R_KM * 1000, color: '#5fb3ff', weight: 1, opacity: .6, fill: false, dashArray: '4 6' }).addTo(map);
-  L.circleMarker([C.lat, C.lon], { radius: 4, color: '#fff', fillColor: '#5fb3ff', fillOpacity: 1, weight: 1.5 })
-    .addTo(map).bindTooltip('Viareggio', { permanent: true, direction: 'right', className: 'lbl' });
+  const canvas=document.createElement('canvas'); canvas.width=canvas.height=PX;
+  const ctx=canvas.getContext('2d');
+  const overlay=L.imageOverlay(canvas.toDataURL(),[[0,0],[0,0]],{interactive:false,className:'ov'}).addTo(map);
+  const ring=L.circle([C.lat,C.lon],{radius:1,color:'#6ec1ff',weight:1,opacity:.55,fill:false,dashArray:'3 7'}).addTo(map);
+  L.circleMarker([C.lat,C.lon],{radius:4.5,color:'#fff',fillColor:'#6ec1ff',fillOpacity:1,weight:1.5}).addTo(map)
+    .bindTooltip('Viareggio',{permanent:true,direction:'right',className:'lbl',offset:[6,0]});
 
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = PX;
-  const ctx = canvas.getContext('2d');
-  const overlay = L.imageOverlay(canvas.toDataURL(), bounds, { opacity: 1, interactive: false }).addTo(map);
-  map.fitBounds(bounds, { padding: [10, 10] });
+  // ---- geometria griglia ----
+  function geom(){
+    dLat=R_KM/111.32; dLon=R_KM/(111.32*Math.cos(C.lat*Math.PI/180));
+    bounds=L.latLngBounds([C.lat-dLat,C.lon-dLon],[C.lat+dLat,C.lon+dLon]);
+    lats=[];lons=[];
+    for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+      lats.push((C.lat-dLat+2*dLat*i/(N-1)).toFixed(3));  // i: sud→nord
+      lons.push((C.lon-dLon+2*dLon*j/(N-1)).toFixed(3));  // j: ovest→est
+    }
+    overlay.setBounds(bounds); ring.setRadius(R_KM*1000);
+    map.fitBounds(bounds,{paddingTopLeft:[10,60],paddingBottomRight:[10,innerWidth<760?330:10]});
+  }
 
   // ---- dati ----
-  const lats = [], lons = [];
-  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
-    lats.push((C.lat - dLat + 2 * dLat * i / (N - 1)).toFixed(3));   // i: sud → nord
-    lons.push((C.lon - dLon + 2 * dLon * j / (N - 1)).toFixed(3));   // j: ovest → est
-  }
-  const url = 'https://api.open-meteo.com/v1/forecast'
-    + '?latitude=' + lats.join(',') + '&longitude=' + lons.join(',')
-    + '&hourly=cloud_cover,precipitation&past_hours=' + PAST_H + '&forecast_hours=' + FUTURE_H
-    + '&timezone=Europe%2FRome';
-
-  let times = [], cloud = [], rain = [];   // cloud[t][i*N+j]
-  const $ = id => document.getElementById(id);
-  const slider = $('slider'), status = $('status'), timeEl = $('time'), playBtn = $('play');
-
-  fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(arr => {
-      if (!Array.isArray(arr)) arr = [arr];
-      times = arr[0].hourly.time;
-      const T = times.length;
-      cloud = Array.from({ length: T }, () => new Float32Array(N * N));
-      rain  = Array.from({ length: T }, () => new Float32Array(N * N));
-      arr.forEach((loc, k) => {
-        for (let t = 0; t < T; t++) {
-          cloud[t][k] = loc.hourly.cloud_cover[t] ?? 0;
-          rain[t][k]  = loc.hourly.precipitation[t] ?? 0;
-        }
-      });
-      slider.max = T - 1;
-      slider.value = nowIndex();
-      status.textContent = 'Modello Open-Meteo, ' + N * N + ' punti · aggiornato ' + new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  function load(){
+    stop(); $('status').textContent='Scarico la previsione…'; $('time').innerHTML='—<small>caricamento…</small>';
+    const url='https://api.open-meteo.com/v1/forecast?latitude='+lats.join(',')+'&longitude='+lons.join(',')
+      +'&hourly=cloud_cover,precipitation&past_hours='+PAST_H+'&forecast_hours='+FUTURE_H+'&timezone=Europe%2FRome';
+    fetch(url).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(arr=>{
+      if(!Array.isArray(arr))arr=[arr];
+      times=arr[0].hourly.time; T=times.length; frames=(T-1)*SUB;
+      cloud=Array.from({length:T},()=>new Float32Array(N*N));
+      rain=Array.from({length:T},()=>new Float32Array(N*N));
+      arr.forEach((loc,k)=>{for(let t=0;t<T;t++){cloud[t][k]=loc.hourly.cloud_cover[t]??0;rain[t][k]=loc.hourly.precipitation[t]??0;}});
+      slider.max=frames; slider.value=nowFrame();
+      drawSpark(); drawTicks();
+      $('status').textContent=N*N+' punti di griglia · passo ~'+Math.round(2*R_KM/(N-1))+' km · aggiornato '+new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
       render(+slider.value);
-    })
-    .catch(e => {
-      status.textContent = 'Impossibile caricare i dati (' + e.message + '). Ricarica la pagina.';
-      timeEl.innerHTML = '—<span>errore</span>';
-    });
+    }).catch(e=>{$('status').textContent='Dati non disponibili ('+e.message+'). Riprova più tardi.';});
+  }
+  function nowFrame(){
+    const t0=new Date(times[0]).getTime(), f=(Date.now()-t0)/3600000*SUB;
+    return Math.max(0,Math.min(frames,Math.round(f)));
+  }
+  function frameDate(f){return new Date(new Date(times[0]).getTime()+f/SUB*3600000);}
 
-  function nowIndex() {
-    const now = Date.now();
-    let best = 0, d = Infinity;
-    times.forEach((s, i) => { const x = Math.abs(new Date(s).getTime() - now); if (x < d) { d = x; best = i; } });
-    return best;
+  // ---- colori ----
+  const STOPS=[[0.1,[60,170,255]],[0.5,[80,220,140]],[1.5,[255,230,80]],[4,[255,150,40]],[10,[235,50,60]],[25,[200,60,220]]];
+  function rainColor(mm){
+    if(mm<=STOPS[0][0])return STOPS[0][1];
+    for(let i=1;i<STOPS.length;i++){
+      if(mm<=STOPS[i][0]){
+        const a=STOPS[i-1],b=STOPS[i];
+        const f=(Math.log(mm)-Math.log(a[0]))/(Math.log(b[0])-Math.log(a[0]));
+        return [0,1,2].map(k=>a[1][k]+(b[1][k]-a[1][k])*f);
+      }
+    }
+    return STOPS[STOPS.length-1][1];
   }
 
   // ---- rendering ----
-  function bilinear(arr, gx, gy) {
-    const x0 = Math.floor(gx), y0 = Math.floor(gy);
-    const x1 = Math.min(x0 + 1, N - 1), y1 = Math.min(y0 + 1, N - 1);
-    const fx = gx - x0, fy = gy - y0;
-    const a = arr[y0 * N + x0], b = arr[y0 * N + x1], c = arr[y1 * N + x0], d = arr[y1 * N + x1];
-    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+  const cur=new Float32Array(N*N), rur=new Float32Array(N*N);
+  function bilinear(arr,gx,gy){
+    const x0=Math.floor(gx),y0=Math.floor(gy),x1=Math.min(x0+1,N-1),y1=Math.min(y0+1,N-1),fx=gx-x0,fy=gy-y0;
+    const a=arr[y0*N+x0],b=arr[y0*N+x1],c=arr[y1*N+x0],d=arr[y1*N+x1];
+    return (a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy;
   }
-  function rainColor(mm) {
-    // 0.1 → azzurro, 2 → blu, 6+ → viola
-    const t = Math.min(1, Math.log1p(mm) / Math.log1p(6));
-    const stops = [[138, 208, 255], [30, 111, 224], [61, 31, 168]];
-    const s = t < .5 ? 0 : 1, f = t < .5 ? t * 2 : (t - .5) * 2;
-    return [0, 1, 2].map(i => stops[s][i] + (stops[s + 1][i] - stops[s][i]) * f);
+  function interp(f){
+    const t0=Math.min(T-1,Math.floor(f/SUB)),t1=Math.min(T-1,t0+1),fr=f/SUB-t0;
+    for(let k=0;k<N*N;k++){cur[k]=cloud[t0][k]*(1-fr)+cloud[t1][k]*fr; rur[k]=rain[t0][k]*(1-fr)+rain[t1][k]*fr;}
   }
-  function render(t) {
-    if (!cloud[t]) return;
-    const img = ctx.createImageData(PX, PX), d = img.data;
-    for (let py = 0; py < PX; py++) {
-      const gy = (1 - py / (PX - 1)) * (N - 1);            // riga 0 canvas = nord
-      for (let px = 0; px < PX; px++) {
-        const gx = px / (PX - 1) * (N - 1);
-        const cc = bilinear(cloud[t], gx, gy) / 100;
-        const mm = bilinear(rain[t], gx, gy);
-        // nuvole: bianco-grigio semitrasparente
-        let r = 235, g = 238, b = 243, a = Math.pow(cc, 1.4) * .8;
-        // pioggia sopra le nuvole
-        if (mm > 0.05) {
-          const [rr, rg, rb] = rainColor(mm);
-          const ra = Math.min(.92, .45 + mm / 5);
-          r = r * (1 - ra) + rr * ra; g = g * (1 - ra) + rg * ra; b = b * (1 - ra) + rb * ra;
-          a = Math.max(a, ra);
+  const cosL=Math.cos(C.lat*Math.PI/180);
+  function render(f){
+    if(!T)return; interp(f);
+    const img=ctx.createImageData(PX,PX),d=img.data,R2=R_KM;
+    for(let py=0;py<PX;py++){
+      const v=py/(PX-1), gy=(1-v)*(N-1), dy=(dLat-2*dLat*v)*111.32;
+      for(let px=0;px<PX;px++){
+        const u=px/(PX-1), gx=u*(N-1), dx=(2*dLon*u-dLon)*111.32*cosL;
+        const dist=Math.hypot(dx,dy);
+        let mask=1-(dist-R2*0.86)/(R2*0.14); mask=mask<0?0:mask>1?1:mask; mask=mask*mask*(3-2*mask);
+        const o=(py*PX+px)*4;
+        if(mask<=0){d[o+3]=0;continue;}
+        const cc=bilinear(cur,gx,gy)/100, mm=bilinear(rur,gx,gy);
+        let r=220,g=228,b=238,a=Math.pow(cc,1.6)*.62;
+        if(mm>0.08){
+          const [rr,rg,rb]=rainColor(mm), ra=Math.min(.95,.55+Math.log1p(mm)/3);
+          r=r*(1-ra)+rr*ra;g=g*(1-ra)+rg*ra;b=b*(1-ra)+rb*ra;a=Math.max(a,ra);
         }
-        const o = (py * PX + px) * 4;
-        d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = a * 255;
+        d[o]=r;d[o+1]=g;d[o+2]=b;d[o+3]=a*mask*255;
       }
     }
-    ctx.putImageData(img, 0, 0);
+    ctx.putImageData(img,0,0);
     overlay.setUrl(canvas.toDataURL());
-
-    const dt = new Date(times[t]);
-    const isNow = t === nowIndex();
-    const day = dt.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
-    timeEl.innerHTML = dt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-      + (isNow ? ' <span id="now" style="display:inline">adesso</span>' : '')
-      + '<span>' + day + (t < PAST_H ? ' · osservato/analisi' : ' · previsione') + '</span>';
+    // ora
+    const dt=frameDate(f), nf=nowFrame(), isNow=Math.abs(f-nf)<SUB/2;
+    const hm=dt.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+    const day=dt.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
+    $('time').innerHTML=hm+(isNow?'<em>adesso</em>':'')+'<small>'+day+(f<nf?' · passato':' · previsione')+'</small>';
+    drawSpark(f);
+    if(lastPopup)updatePopup();
   }
 
-  // ---- controlli ----
-  let timer = null;
-  slider.addEventListener('input', () => { stop(); render(+slider.value); });
-  playBtn.addEventListener('click', () => timer ? stop() : play());
-  function play() {
-    playBtn.textContent = '❚❚'; playBtn.setAttribute('aria-label', 'Ferma animazione');
-    timer = setInterval(() => {
-      let v = +slider.value + 1; if (v > +slider.max) v = 0;
-      slider.value = v; render(v);
-    }, STEP_MS);
+  // ---- timeline ----
+  const spark=$('spark'),sctx=spark.getContext('2d');
+  function drawSpark(f){
+    const w=spark.clientWidth,h=spark.clientHeight,dpr=devicePixelRatio||1;
+    if(spark.width!==w*dpr){spark.width=w*dpr;spark.height=h*dpr;}
+    sctx.setTransform(dpr,0,0,dpr,0,0); sctx.clearRect(0,0,w,h);
+    if(!T)return;
+    const c=((N-1)/2)*N+(N-1)/2, bw=w/(T-1);
+    // area media pioggia sul territorio + valore al centro
+    let max=0.5; const mean=[],center=[];
+    for(let t=0;t<T;t++){let s=0;for(let k=0;k<N*N;k++)s+=rain[t][k];mean.push(s/(N*N));center.push(rain[t][c]);max=Math.max(max,center[t],mean[t]);}
+    // nuvole al centro (sfondo)
+    sctx.fillStyle='rgba(220,228,238,.10)';
+    for(let t=0;t<T-1;t++){const hh=cloud[t][c]/100*(h-10);sctx.fillRect(t*bw,h-4-hh,bw,hh);}
+    // pioggia centro
+    for(let t=0;t<T-1;t++){const v=center[t];if(v<0.05)continue;const [r,g,b]=rainColor(v);sctx.fillStyle=`rgb(${r|0},${g|0},${b|0})`;const hh=Math.max(2,Math.log1p(v)/Math.log1p(max)*(h-10));sctx.fillRect(t*bw+1,h-4-hh,Math.max(1,bw-2),hh);}
+    // ora attuale
+    const nx=nowFrame()/frames*w; sctx.strokeStyle='rgba(110,193,255,.9)';sctx.setLineDash([3,3]);sctx.beginPath();sctx.moveTo(nx,0);sctx.lineTo(nx,h);sctx.stroke();sctx.setLineDash([]);
+    if(f!=null){const x=f/frames*w;sctx.fillStyle='rgba(255,255,255,.8)';sctx.fillRect(x-.5,0,1,h);}
   }
-  function stop() {
-    clearInterval(timer); timer = null;
-    playBtn.textContent = '▶'; playBtn.setAttribute('aria-label', 'Avvia animazione');
+  function drawTicks(){
+    const el=$('ticks'); el.innerHTML='';
+    for(let t=0;t<T;t+=12){const dt=new Date(times[t]);const s=document.createElement('span');
+      s.textContent=dt.getHours()===0?dt.toLocaleDateString('it-IT',{weekday:'short',day:'numeric'}):dt.getHours()+':00';el.appendChild(s);}
   }
+
+  // ---- interazione ----
+  const slider=$('slider');
+  slider.addEventListener('input',()=>{stop();render(+slider.value);});
+  $('play').addEventListener('click',()=>timer?stop():play());
+  $('speed').addEventListener('click',()=>{speed=speed===1?2:speed===2?4:1;$('speed').textContent=speed+'×';if(timer){stop();play();}});
+  $('radius').addEventListener('change',()=>{R_KM=+$('radius').value;geom();load();});
+  function play(){$('play').textContent='❚❚';$('play').setAttribute('aria-label','Ferma animazione');
+    timer=setInterval(()=>{let v=+slider.value+1;if(v>frames)v=0;slider.value=v;render(v);},130/speed);}
+  function stop(){clearInterval(timer);timer=null;$('play').textContent='▶';$('play').setAttribute('aria-label','Avvia animazione');}
+
+  map.on('click',e=>{
+    if(!T)return; const ll=e.latlng;
+    if(!bounds.contains(ll)){if(lastPopup){map.closePopup(lastPopup);lastPopup=null;}return;}
+    lastPopup=L.popup({closeButton:false,autoPan:false}).setLatLng(ll).openOn(map); updatePopup();
+  });
+  map.on('popupclose',()=>lastPopup=null);
+  function updatePopup(){
+    const ll=lastPopup.getLatLng();
+    const gx=(ll.lng-(C.lon-dLon))/(2*dLon)*(N-1), gy=(ll.lat-(C.lat-dLat))/(2*dLat)*(N-1);
+    const cc=bilinear(cur,gx,gy), mm=bilinear(rur,gx,gy);
+    lastPopup.setContent('<b>'+frameDate(+slider.value).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})+'</b><br>'
+      +'Nuvole '+Math.round(cc)+'%<br>Pioggia '+(mm<0.05?'assente':mm.toFixed(1).replace('.',',')+' mm/h'));
+  }
+  addEventListener('resize',()=>drawSpark(+slider.value));
+
+  geom(); load();
 }
 boot();
 </script>
-<style>
-  .lbl{background:transparent;border:0;box-shadow:none;color:#e9eef3;font-weight:600;font-size:12px;text-shadow:0 1px 3px #000}
-  .lbl::before{display:none}
-</style>
 </body>
 </html>
