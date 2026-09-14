@@ -49,25 +49,20 @@
   #legend .bar{height:8px;border-radius:4px;background:linear-gradient(90deg,#3caaff 0%,#50dc8c 18%,#ffe650 38%,#ff9628 58%,#eb323c 78%,#c83cdc 100%)}
   #legend .lab{display:flex;justify-content:space-between;margin-top:3px;font-variant-numeric:tabular-nums}
   #legend .cl{display:flex;align-items:center;gap:8px;margin-top:6px}
-  #legend .cl i{width:60px;height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(220,228,238,0),rgba(220,228,238,.7))}
+  #legend .cl i{width:60px;height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(162,168,178,0),rgba(162,168,178,.6) 40%,rgba(242,248,255,.92))}
   #status{font-size:11px;color:var(--muted);margin-top:8px;min-height:1em}
   @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <div id="map" aria-label="Mappa nuvole e pioggia"></div>
-<div id="title"><b>Radar previsionale</b><span>Viareggio · nuvole e pioggia · modello Open-Meteo</span></div>
+<div id="title"><b>Radar previsionale</b><span>Viareggio · nuvole e pioggia · 400 km · Open-Meteo</span></div>
 
 <div id="panel">
   <div class="row">
     <button id="play" aria-label="Avvia animazione">▶</button>
     <div id="time">—<small>caricamento…</small></div>
     <button id="speed" class="pill" aria-label="Velocità animazione">1×</button>
-    <select id="radius" class="pill" aria-label="Raggio">
-      <option value="100">100 km</option>
-      <option value="200" selected>200 km</option>
-      <option value="300">300 km</option>
-    </select>
   </div>
   <div id="tl">
     <canvas id="spark"></canvas>
@@ -93,7 +88,7 @@ function start(){
   const $=id=>document.getElementById(id);
   const C={lat:43.8667,lon:10.25};
   const N=13, PAST_H=6, FUTURE_H=48, PX=320, SUB=6;   // SUB frame per ora (10 min)
-  let R_KM=+$('radius').value, dLat, dLon, bounds, lats, lons;
+  const R_KM=200; let dLat, dLon, bounds, lats, lons;
   let times=[], cloud=[], rain=[], T=0, frames=0;
   let speed=1, timer=null, lastPopup=null;
 
@@ -108,7 +103,6 @@ function start(){
   const canvas=document.createElement('canvas'); canvas.width=canvas.height=PX;
   const ctx=canvas.getContext('2d');
   const overlay=L.imageOverlay(canvas.toDataURL(),[[0,0],[0,0]],{interactive:false,className:'ov'}).addTo(map);
-  const ring=L.circle([C.lat,C.lon],{radius:1,color:'#6ec1ff',weight:1,opacity:.55,fill:false,dashArray:'3 7'}).addTo(map);
   L.circleMarker([C.lat,C.lon],{radius:4.5,color:'#fff',fillColor:'#6ec1ff',fillOpacity:1,weight:1.5}).addTo(map)
     .bindTooltip('Viareggio',{permanent:true,direction:'right',className:'lbl',offset:[6,0]});
 
@@ -121,7 +115,7 @@ function start(){
       lats.push((C.lat-dLat+2*dLat*i/(N-1)).toFixed(3));  // i: sud→nord
       lons.push((C.lon-dLon+2*dLon*j/(N-1)).toFixed(3));  // j: ovest→est
     }
-    overlay.setBounds(bounds); ring.setRadius(R_KM*1000);
+    overlay.setBounds(bounds);
     map.fitBounds(bounds,{paddingTopLeft:[10,60],paddingBottomRight:[10,innerWidth<760?330:10]});
   }
 
@@ -138,7 +132,7 @@ function start(){
       arr.forEach((loc,k)=>{for(let t=0;t<T;t++){cloud[t][k]=loc.hourly.cloud_cover[t]??0;rain[t][k]=loc.hourly.precipitation[t]??0;}});
       slider.max=frames; slider.value=nowFrame();
       drawSpark(); drawTicks();
-      $('status').textContent=N*N+' punti di griglia · passo ~'+Math.round(2*R_KM/(N-1))+' km · aggiornato '+new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+      $('status').textContent=N*N+' punti su 400×400 km · passo ~'+Math.round(2*R_KM/(N-1))+' km · aggiornato '+new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
       render(+slider.value);
     }).catch(e=>{$('status').textContent='Dati non disponibili ('+e.message+'). Riprova più tardi.';});
   }
@@ -173,20 +167,20 @@ function start(){
     const t0=Math.min(T-1,Math.floor(f/SUB)),t1=Math.min(T-1,t0+1),fr=f/SUB-t0;
     for(let k=0;k<N*N;k++){cur[k]=cloud[t0][k]*(1-fr)+cloud[t1][k]*fr; rur[k]=rain[t0][k]*(1-fr)+rain[t1][k]*fr;}
   }
-  const cosL=Math.cos(C.lat*Math.PI/180);
   function render(f){
     if(!T)return; interp(f);
-    const img=ctx.createImageData(PX,PX),d=img.data,R2=R_KM;
+    const img=ctx.createImageData(PX,PX),d=img.data;
     for(let py=0;py<PX;py++){
-      const v=py/(PX-1), gy=(1-v)*(N-1), dy=(dLat-2*dLat*v)*111.32;
+      const v=py/(PX-1), gy=(1-v)*(N-1);
       for(let px=0;px<PX;px++){
-        const u=px/(PX-1), gx=u*(N-1), dx=(2*dLon*u-dLon)*111.32*cosL;
-        const dist=Math.hypot(dx,dy);
-        let mask=1-(dist-R2*0.86)/(R2*0.14); mask=mask<0?0:mask>1?1:mask; mask=mask*mask*(3-2*mask);
+        const u=px/(PX-1), gx=u*(N-1);
+        const edge=Math.min(u,1-u,v,1-v)/0.06; const mask=edge<1?edge*edge*(3-2*edge):1;
         const o=(py*PX+px)*4;
-        if(mask<=0){d[o+3]=0;continue;}
         const cc=bilinear(cur,gx,gy)/100, mm=bilinear(rur,gx,gy);
-        let r=220,g=228,b=238,a=Math.pow(cc,1.6)*.62;
+        // nuvole: alpha ripida sopra il 25% di copertura, tono da grigio a bianco pieno
+        let ct=(cc-0.25)/0.75; ct=ct<0?0:ct; ct=ct*ct*(3-2*ct);
+        const lum=170+80*ct;
+        let r=lum-8,g=lum-2,b=lum+8,a=ct*.92;
         if(mm>0.08){
           const [rr,rg,rb]=rainColor(mm), ra=Math.min(.95,.55+Math.log1p(mm)/3);
           r=r*(1-ra)+rr*ra;g=g*(1-ra)+rg*ra;b=b*(1-ra)+rb*ra;a=Math.max(a,ra);
@@ -236,7 +230,6 @@ function start(){
   slider.addEventListener('input',()=>{stop();render(+slider.value);});
   $('play').addEventListener('click',()=>timer?stop():play());
   $('speed').addEventListener('click',()=>{speed=speed===1?2:speed===2?4:1;$('speed').textContent=speed+'×';if(timer){stop();play();}});
-  $('radius').addEventListener('change',()=>{R_KM=+$('radius').value;geom();load();});
   function play(){$('play').textContent='❚❚';$('play').setAttribute('aria-label','Ferma animazione');
     timer=setInterval(()=>{let v=+slider.value+1;if(v>frames)v=0;slider.value=v;render(v);},130/speed);}
   function stop(){clearInterval(timer);timer=null;$('play').textContent='▶';$('play').setAttribute('aria-label','Avvia animazione');}
