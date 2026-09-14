@@ -56,7 +56,7 @@
 </head>
 <body>
 <div id="map" aria-label="Mappa nuvole e pioggia"></div>
-<div id="title"><b>Radar previsionale</b><span>Viareggio · nuvole e pioggia · 400 km · Open-Meteo</span></div>
+<div id="title"><b>Radar previsionale</b><span>Europa · nuvole e pioggia · 3 giorni · Open-Meteo</span></div>
 
 <div id="panel">
   <div class="row">
@@ -86,111 +86,114 @@ function boot(){ if (window.L) return start();
 }
 function start(){
   const $=id=>document.getElementById(id);
-  const C={lat:43.8667,lon:10.25};
-  const N=13, PAST_H=6, FUTURE_H=48, PX=320, SUB=6;   // SUB frame per ora (10 min)
-  const R_KM=200; let dLat, dLon, bounds, lats, lons;
-  let times=[], cloud=[], rain=[], T=0, frames=0;
-  let speed=1, timer=null, lastPopup=null;
+  const HOME={lat:43.8667,lon:10.25,name:'Viareggio'};
+  // estensione Europa
+  const LAT_S=34, LAT_N=71.5, LON_W=-12, LON_E=42;
+  const NX=26, NY=22;                       // 572 punti, passo ~2.1° lon / 1.8° lat
+  const CHUNK=110;                          // punti per richiesta
+  const PAST_H=6, FUTURE_H=72, SUB=6;       // 3 giorni, frame ogni 10 min
+  const PXW=540, PXH=440;
+  let times=[], cloud=[], rain=[], T=0, frames=0, speed=1, timer=null, lastPopup=null;
 
   // ---- mappa ----
-  const map=L.map('map',{zoomControl:false}).setView([C.lat,C.lon],7);
+  const bounds=L.latLngBounds([LAT_S,LON_W],[LAT_N,LON_E]);
+  const map=L.map('map',{zoomControl:false,minZoom:3,maxZoom:10,worldCopyJump:false}).fitBounds(bounds);
   L.control.zoom({position:'topright'}).addTo(map);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:12,
     attribution:'&copy; OpenStreetMap &copy; CARTO · dati <a href="https://open-meteo.com">Open-Meteo</a>'}).addTo(map);
   map.createPane('labels'); map.getPane('labels').style.zIndex=650; map.getPane('labels').style.pointerEvents='none';
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:12,pane:'labels'}).addTo(map);
 
-  const canvas=document.createElement('canvas'); canvas.width=canvas.height=PX;
+  const canvas=document.createElement('canvas'); canvas.width=PXW; canvas.height=PXH;
   const ctx=canvas.getContext('2d');
-  const overlay=L.imageOverlay(canvas.toDataURL(),[[0,0],[0,0]],{interactive:false,className:'ov'}).addTo(map);
-  L.circleMarker([C.lat,C.lon],{radius:4.5,color:'#fff',fillColor:'#6ec1ff',fillOpacity:1,weight:1.5}).addTo(map)
-    .bindTooltip('Viareggio',{permanent:true,direction:'right',className:'lbl',offset:[6,0]});
+  const overlay=L.imageOverlay(canvas.toDataURL(),bounds,{interactive:false}).addTo(map);
+  L.circleMarker([HOME.lat,HOME.lon],{radius:4,color:'#fff',fillColor:'#6ec1ff',fillOpacity:1,weight:1.5}).addTo(map)
+    .bindTooltip(HOME.name,{permanent:true,direction:'right',className:'lbl',offset:[6,0]});
+  map.fitBounds(bounds,{paddingTopLeft:[0,50],paddingBottomRight:[0,innerWidth<760?300:0]});
 
-  // ---- geometria griglia ----
-  function geom(){
-    dLat=R_KM/111.32; dLon=R_KM/(111.32*Math.cos(C.lat*Math.PI/180));
-    bounds=L.latLngBounds([C.lat-dLat,C.lon-dLon],[C.lat+dLat,C.lon+dLon]);
-    lats=[];lons=[];
-    for(let i=0;i<N;i++)for(let j=0;j<N;j++){
-      lats.push((C.lat-dLat+2*dLat*i/(N-1)).toFixed(3));  // i: sud→nord
-      lons.push((C.lon-dLon+2*dLon*j/(N-1)).toFixed(3));  // j: ovest→est
-    }
-    overlay.setBounds(bounds);
-    map.fitBounds(bounds,{paddingTopLeft:[10,60],paddingBottomRight:[10,innerWidth<760?330:10]});
+  // ---- griglia ----
+  const lats=[],lons=[];
+  for(let i=0;i<NY;i++)for(let j=0;j<NX;j++){
+    lats.push((LAT_S+(LAT_N-LAT_S)*i/(NY-1)).toFixed(2));   // i: sud→nord
+    lons.push((LON_W+(LON_E-LON_W)*j/(NX-1)).toFixed(2));   // j: ovest→est
   }
+  const HOME_K=Math.round((HOME.lat-LAT_S)/(LAT_N-LAT_S)*(NY-1))*NX+Math.round((HOME.lon-LON_W)/(LON_E-LON_W)*(NX-1));
 
-  // ---- dati ----
+  // ---- dati (a blocchi) ----
   function load(){
     stop(); $('status').textContent='Scarico la previsione…'; $('time').innerHTML='—<small>caricamento…</small>';
-    const url='https://api.open-meteo.com/v1/forecast?latitude='+lats.join(',')+'&longitude='+lons.join(',')
-      +'&hourly=cloud_cover,precipitation&past_hours='+PAST_H+'&forecast_hours='+FUTURE_H+'&timezone=Europe%2FRome';
-    fetch(url).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(arr=>{
-      if(!Array.isArray(arr))arr=[arr];
+    const reqs=[];
+    for(let a=0;a<lats.length;a+=CHUNK){
+      const url='https://api.open-meteo.com/v1/forecast?latitude='+lats.slice(a,a+CHUNK).join(',')+'&longitude='+lons.slice(a,a+CHUNK).join(',')
+        +'&hourly=cloud_cover,precipitation&past_hours='+PAST_H+'&forecast_hours='+FUTURE_H+'&timezone=Europe%2FRome';
+      reqs.push(fetch(url).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(x=>Array.isArray(x)?x:[x]));
+    }
+    Promise.all(reqs).then(parts=>{
+      const arr=parts.flat();
       times=arr[0].hourly.time; T=times.length; frames=(T-1)*SUB;
-      cloud=Array.from({length:T},()=>new Float32Array(N*N));
-      rain=Array.from({length:T},()=>new Float32Array(N*N));
+      cloud=Array.from({length:T},()=>new Float32Array(NX*NY));
+      rain=Array.from({length:T},()=>new Float32Array(NX*NY));
       arr.forEach((loc,k)=>{for(let t=0;t<T;t++){cloud[t][k]=loc.hourly.cloud_cover[t]??0;rain[t][k]=loc.hourly.precipitation[t]??0;}});
       slider.max=frames; slider.value=nowFrame();
       drawSpark(); drawTicks();
-      $('status').textContent=N*N+' punti su 400×400 km · passo ~'+Math.round(2*R_KM/(N-1))+' km · aggiornato '+new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+      $('status').textContent=NX*NY+' punti di griglia · passo ~'+Math.round((LON_E-LON_W)/(NX-1)*80)+' km · aggiornato '+new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
       render(+slider.value);
     }).catch(e=>{$('status').textContent='Dati non disponibili ('+e.message+'). Riprova più tardi.';});
   }
-  function nowFrame(){
-    const t0=new Date(times[0]).getTime(), f=(Date.now()-t0)/3600000*SUB;
-    return Math.max(0,Math.min(frames,Math.round(f)));
-  }
+  function nowFrame(){const f=(Date.now()-new Date(times[0]).getTime())/3600000*SUB;return Math.max(0,Math.min(frames,Math.round(f)));}
   function frameDate(f){return new Date(new Date(times[0]).getTime()+f/SUB*3600000);}
 
   // ---- colori ----
   const STOPS=[[0.1,[60,170,255]],[0.5,[80,220,140]],[1.5,[255,230,80]],[4,[255,150,40]],[10,[235,50,60]],[25,[200,60,220]]];
   function rainColor(mm){
     if(mm<=STOPS[0][0])return STOPS[0][1];
-    for(let i=1;i<STOPS.length;i++){
-      if(mm<=STOPS[i][0]){
-        const a=STOPS[i-1],b=STOPS[i];
-        const f=(Math.log(mm)-Math.log(a[0]))/(Math.log(b[0])-Math.log(a[0]));
-        return [0,1,2].map(k=>a[1][k]+(b[1][k]-a[1][k])*f);
-      }
+    for(let i=1;i<STOPS.length;i++)if(mm<=STOPS[i][0]){
+      const a=STOPS[i-1],b=STOPS[i],f=(Math.log(mm)-Math.log(a[0]))/(Math.log(b[0])-Math.log(a[0]));
+      return [0,1,2].map(k=>a[1][k]+(b[1][k]-a[1][k])*f);
     }
     return STOPS[STOPS.length-1][1];
   }
 
   // ---- rendering ----
-  const cur=new Float32Array(N*N), rur=new Float32Array(N*N);
+  const cur=new Float32Array(NX*NY), rur=new Float32Array(NX*NY);
   function bilinear(arr,gx,gy){
-    const x0=Math.floor(gx),y0=Math.floor(gy),x1=Math.min(x0+1,N-1),y1=Math.min(y0+1,N-1),fx=gx-x0,fy=gy-y0;
-    const a=arr[y0*N+x0],b=arr[y0*N+x1],c=arr[y1*N+x0],d=arr[y1*N+x1];
+    gx=Math.max(0,Math.min(NX-1,gx)); gy=Math.max(0,Math.min(NY-1,gy));
+    const x0=Math.floor(gx),y0=Math.floor(gy),x1=Math.min(x0+1,NX-1),y1=Math.min(y0+1,NY-1),fx=gx-x0,fy=gy-y0;
+    const a=arr[y0*NX+x0],b=arr[y0*NX+x1],c=arr[y1*NX+x0],d=arr[y1*NX+x1];
     return (a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy;
   }
   function interp(f){
     const t0=Math.min(T-1,Math.floor(f/SUB)),t1=Math.min(T-1,t0+1),fr=f/SUB-t0;
-    for(let k=0;k<N*N;k++){cur[k]=cloud[t0][k]*(1-fr)+cloud[t1][k]*fr; rur[k]=rain[t0][k]*(1-fr)+rain[t1][k]*fr;}
+    for(let k=0;k<NX*NY;k++){cur[k]=cloud[t0][k]*(1-fr)+cloud[t1][k]*fr; rur[k]=rain[t0][k]*(1-fr)+rain[t1][k]*fr;}
+  }
+  // l'overlay è stirato in proiezione Mercatore: mappo ogni riga del canvas alla latitudine reale
+  const merc=lat=>Math.log(Math.tan(Math.PI/4+lat*Math.PI/360));
+  const mS=merc(LAT_S), mN=merc(LAT_N);
+  const rowGy=new Float32Array(PXH);
+  for(let py=0;py<PXH;py++){
+    const m=mN-(mN-mS)*py/(PXH-1), lat=(2*Math.atan(Math.exp(m))-Math.PI/2)*180/Math.PI;
+    rowGy[py]=(lat-LAT_S)/(LAT_N-LAT_S)*(NY-1);
   }
   function render(f){
     if(!T)return; interp(f);
-    const img=ctx.createImageData(PX,PX),d=img.data;
-    for(let py=0;py<PX;py++){
-      const v=py/(PX-1), gy=(1-v)*(N-1);
-      for(let px=0;px<PX;px++){
-        const u=px/(PX-1), gx=u*(N-1);
-        const edge=Math.min(u,1-u,v,1-v)/0.06; const mask=edge<1?edge*edge*(3-2*edge):1;
-        const o=(py*PX+px)*4;
+    const img=ctx.createImageData(PXW,PXH),d=img.data;
+    for(let py=0;py<PXH;py++){
+      const gy=rowGy[py];
+      for(let px=0;px<PXW;px++){
+        const gx=px/(PXW-1)*(NX-1), o=(py*PXW+px)*4;
         const cc=bilinear(cur,gx,gy)/100, mm=bilinear(rur,gx,gy);
-        // nuvole: alpha ripida sopra il 25% di copertura, tono da grigio a bianco pieno
         let ct=(cc-0.25)/0.75; ct=ct<0?0:ct; ct=ct*ct*(3-2*ct);
         const lum=170+80*ct;
-        let r=lum-8,g=lum-2,b=lum+8,a=ct*.92;
+        let r=lum-8,g=lum-2,b=lum+8,a=ct*.9;
         if(mm>0.08){
           const [rr,rg,rb]=rainColor(mm), ra=Math.min(.95,.55+Math.log1p(mm)/3);
           r=r*(1-ra)+rr*ra;g=g*(1-ra)+rg*ra;b=b*(1-ra)+rb*ra;a=Math.max(a,ra);
         }
-        d[o]=r;d[o+1]=g;d[o+2]=b;d[o+3]=a*mask*255;
+        d[o]=r;d[o+1]=g;d[o+2]=b;d[o+3]=a*255;
       }
     }
     ctx.putImageData(img,0,0);
     overlay.setUrl(canvas.toDataURL());
-    // ora
     const dt=frameDate(f), nf=nowFrame(), isNow=Math.abs(f-nf)<SUB/2;
     const hm=dt.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
     const day=dt.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
@@ -199,30 +202,26 @@ function start(){
     if(lastPopup)updatePopup();
   }
 
-  // ---- timeline ----
+  // ---- timeline (valori su Viareggio) ----
   const spark=$('spark'),sctx=spark.getContext('2d');
   function drawSpark(f){
     const w=spark.clientWidth,h=spark.clientHeight,dpr=devicePixelRatio||1;
     if(spark.width!==w*dpr){spark.width=w*dpr;spark.height=h*dpr;}
     sctx.setTransform(dpr,0,0,dpr,0,0); sctx.clearRect(0,0,w,h);
     if(!T)return;
-    const c=((N-1)/2)*N+(N-1)/2, bw=w/(T-1);
-    // area media pioggia sul territorio + valore al centro
-    let max=0.5; const mean=[],center=[];
-    for(let t=0;t<T;t++){let s=0;for(let k=0;k<N*N;k++)s+=rain[t][k];mean.push(s/(N*N));center.push(rain[t][c]);max=Math.max(max,center[t],mean[t]);}
-    // nuvole al centro (sfondo)
-    sctx.fillStyle='rgba(220,228,238,.10)';
-    for(let t=0;t<T-1;t++){const hh=cloud[t][c]/100*(h-10);sctx.fillRect(t*bw,h-4-hh,bw,hh);}
-    // pioggia centro
-    for(let t=0;t<T-1;t++){const v=center[t];if(v<0.05)continue;const [r,g,b]=rainColor(v);sctx.fillStyle=`rgb(${r|0},${g|0},${b|0})`;const hh=Math.max(2,Math.log1p(v)/Math.log1p(max)*(h-10));sctx.fillRect(t*bw+1,h-4-hh,Math.max(1,bw-2),hh);}
-    // ora attuale
+    const bw=w/(T-1); let max=0.5;
+    for(let t=0;t<T;t++)max=Math.max(max,rain[t][HOME_K]);
+    sctx.fillStyle='rgba(220,228,238,.12)';
+    for(let t=0;t<T-1;t++){const hh=cloud[t][HOME_K]/100*(h-10);sctx.fillRect(t*bw,h-4-hh,bw,hh);}
+    for(let t=0;t<T-1;t++){const v=rain[t][HOME_K];if(v<0.05)continue;const [r,g,b]=rainColor(v);sctx.fillStyle=`rgb(${r|0},${g|0},${b|0})`;
+      const hh=Math.max(2,Math.log1p(v)/Math.log1p(max)*(h-10));sctx.fillRect(t*bw+.5,h-4-hh,Math.max(1,bw-1),hh);}
     const nx=nowFrame()/frames*w; sctx.strokeStyle='rgba(110,193,255,.9)';sctx.setLineDash([3,3]);sctx.beginPath();sctx.moveTo(nx,0);sctx.lineTo(nx,h);sctx.stroke();sctx.setLineDash([]);
-    if(f!=null){const x=f/frames*w;sctx.fillStyle='rgba(255,255,255,.8)';sctx.fillRect(x-.5,0,1,h);}
+    if(f!=null){const x=f/frames*w;sctx.fillStyle='rgba(255,255,255,.85)';sctx.fillRect(x-.5,0,1,h);}
   }
   function drawTicks(){
     const el=$('ticks'); el.innerHTML='';
     for(let t=0;t<T;t+=12){const dt=new Date(times[t]);const s=document.createElement('span');
-      s.textContent=dt.getHours()===0?dt.toLocaleDateString('it-IT',{weekday:'short',day:'numeric'}):dt.getHours()+':00';el.appendChild(s);}
+      s.textContent=dt.getHours()===0?dt.toLocaleDateString('it-IT',{weekday:'short',day:'numeric'}):dt.getHours()+'h';el.appendChild(s);}
   }
 
   // ---- interazione ----
@@ -242,14 +241,14 @@ function start(){
   map.on('popupclose',()=>lastPopup=null);
   function updatePopup(){
     const ll=lastPopup.getLatLng();
-    const gx=(ll.lng-(C.lon-dLon))/(2*dLon)*(N-1), gy=(ll.lat-(C.lat-dLat))/(2*dLat)*(N-1);
+    const gx=(ll.lng-LON_W)/(LON_E-LON_W)*(NX-1), gy=(ll.lat-LAT_S)/(LAT_N-LAT_S)*(NY-1);
     const cc=bilinear(cur,gx,gy), mm=bilinear(rur,gx,gy);
     lastPopup.setContent('<b>'+frameDate(+slider.value).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})+'</b><br>'
       +'Nuvole '+Math.round(cc)+'%<br>Pioggia '+(mm<0.05?'assente':mm.toFixed(1).replace('.',',')+' mm/h'));
   }
   addEventListener('resize',()=>drawSpark(+slider.value));
 
-  geom(); load();
+  load();
 }
 boot();
 </script>
